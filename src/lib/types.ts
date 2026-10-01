@@ -108,6 +108,8 @@ export interface ErrorMessage {
   type: "error";
   runId: number;
   message: string;
+  /** Set when the run stopped because the user pressed Cancel. */
+  cancelled?: boolean;
 }
 
 export type WorkerMessage =

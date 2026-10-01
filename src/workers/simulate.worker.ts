@@ -35,6 +35,31 @@ interface WorkerScope {
 
 const ctx = self as unknown as WorkerScope;
 
+/**
+ * Yields to the worker's event loop so queued `cancel` messages can be
+ * delivered.
+ *
+ * Without this the worker is deaf while it computes: `executeRun` is a tight
+ * synchronous loop, and a dedicated worker runs single-threaded, so the
+ * `message` listener cannot execute until the run finishes. Cancelling would
+ * then only ever take effect after the very thing it was meant to interrupt.
+ *
+ * `MessageChannel` is used rather than `setTimeout` because timer clamping
+ * (≥4ms after a few nested timeouts) would add up to hundreds of milliseconds
+ * of dead time per run; a channel callback is a plain macrotask with no floor.
+ */
+function yieldToEventLoop(): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const channel = new MessageChannel();
+    channel.port1.onmessage = () => {
+      channel.port1.close();
+      channel.port2.close();
+      resolve();
+    };
+    channel.port2.postMessage(undefined);
+  });
+}
+
 const DECILES = 10;
 const HISTOGRAM_BINS = 40;
 /** Flip count between cancellation checks. */
@@ -119,11 +144,11 @@ interface MainCallbacks {
  * generator's outputs are correlated rather than independent) and the largest
  * |z| seen at any checkpoint.
  */
-function runMainExperiment(
+async function runMainExperiment(
   rng: { nextBit(): 0 | 1; id: RngId },
   request: SimulationRequest,
   callbacks: MainCallbacks,
-): RunSeries {
+): Promise<RunSeries> {
   const { checkpoints, iterations, runId } = request;
   const started = performance.now();
 
@@ -188,6 +213,7 @@ function runMainExperiment(
     if (i % CHECK_EVERY === 0) {
       assertLive(runId);
       emit(i, false);
+      await yieldToEventLoop();
     }
   }
 
@@ -227,13 +253,13 @@ function runMainExperiment(
  * Seedable generators get a derived seed per trial so the experiments are
  * independent yet fully reproducible from the one seed in the UI.
  */
-function runTrials(
+async function runTrials(
   createTrial: (seed: number) => { nextBit(): 0 | 1 },
   rngId: RngId,
   mainHeads: number,
   request: SimulationRequest,
   onProgress: (done: number) => void,
-): TrialHistogram {
+): Promise<TrialHistogram> {
   const { iterations, trials, runId, seed } = request;
   const started = performance.now();
   const bins = makeBins(iterations);
@@ -258,6 +284,7 @@ function runTrials(
       heads += rng.nextBit();
       if (i % CHECK_EVERY === 0) {
         assertLive(runId);
+        await yieldToEventLoop();
       }
     }
     absorb(heads);
@@ -281,7 +308,7 @@ function runTrials(
   };
 }
 
-function executeRun(request: SimulationRequest): void {
+async function executeRun(request: SimulationRequest): Promise<void> {
   const startedAll = performance.now();
   const algorithms = request.rngIds;
   const totalPhases = algorithms.length * 2;
@@ -291,7 +318,7 @@ function executeRun(request: SimulationRequest): void {
     const base = phasesDone / totalPhases;
     const width = 1 / totalPhases;
 
-    const series = runMainExperiment(
+    const series = await runMainExperiment(
       createRng(rngId, request.seed, request.bitOrder),
       request,
       {
@@ -316,7 +343,7 @@ function executeRun(request: SimulationRequest): void {
       },
     );
 
-    const histogram = runTrials(
+    const histogram = await runTrials(
       (trialSeed) => createRng(rngId, trialSeed, request.bitOrder),
       rngId,
       series.totalHeads,
@@ -367,17 +394,24 @@ ctx.addEventListener("message", (event: MessageEvent<MainThreadMessage>) => {
     return;
   }
   cancelledRunId = null;
-  try {
-    executeRun(message);
-  } catch (error) {
-    if (error instanceof Cancelled) {
-      post({ type: "error", runId: message.runId, message: "Run cancelled." });
-      return;
+  void (async () => {
+    try {
+      await executeRun(message);
+    } catch (error) {
+      if (error instanceof Cancelled) {
+        post({
+          type: "error",
+          runId: message.runId,
+          message: "Run cancelled.",
+          cancelled: true,
+        });
+        return;
+      }
+      post({
+        type: "error",
+        runId: message.runId,
+        message: error instanceof Error ? error.message : "Simulation failed.",
+      });
     }
-    post({
-      type: "error",
-      runId: message.runId,
-      message: error instanceof Error ? error.message : "Simulation failed.",
-    });
-  }
+  })();
 });

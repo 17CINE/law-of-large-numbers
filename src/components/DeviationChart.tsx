@@ -90,17 +90,24 @@ export function DeviationChart({
     [data, ids],
   );
 
+  /**
+   * Domain of the *deviation* curves only. `n` is deliberately excluded: it
+   * lives on the row too, and including it stretches the domain up to the flip
+   * count, which squeezes every curve into the bottom of the plot and leaves
+   * the log axis with a single tick.
+   */
   const yDomain = useMemo<[number, number]>(() => {
     let max = FLOOR;
     for (const row of floored) {
-      for (const value of Object.values(row)) {
+      const values = [row.sigma, row.expected, ...ids.map((id) => row[id])];
+      for (const value of values) {
         if (typeof value === "number" && value > max) {
           max = value;
         }
       }
     }
     return [FLOOR, max * 1.25];
-  }, [floored]);
+  }, [floored, ids]);
 
   return (
     <ChartFrame
@@ -151,7 +158,7 @@ export function DeviationChart({
     >
       <ResponsiveContainer width="100%" height="100%">
         <LineChart
-          data={data}
+          data={floored}
           margin={{ top: 8, right: 14, bottom: 8, left: 0 }}
         >
           <CartesianGrid stroke={chrome.grid} strokeDasharray="2 4" />

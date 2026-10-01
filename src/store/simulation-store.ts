@@ -326,12 +326,22 @@ function applyWorkerMessage(
       };
 
     case "error":
-      return {
-        ...state,
-        status: "error",
-        progressLabel: "Stopped",
-        error: message.message,
-      };
+      // Cancelling is a normal outcome, not a failure: the UI returns to a
+      // re-runnable state and keeps whatever partial results were streamed, so
+      // an interrupted long run is not thrown away.
+      return message.cancelled === true
+        ? {
+            ...state,
+            status: "idle",
+            progressLabel: "Cancelled",
+            error: null,
+          }
+        : {
+            ...state,
+            status: "error",
+            progressLabel: "Stopped",
+            error: message.message,
+          };
   }
 }
 

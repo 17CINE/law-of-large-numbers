@@ -292,6 +292,40 @@ describe("run lifecycle", () => {
     expect(crashed.error).toBe("worker died");
   });
 
+  test("a cancelled run returns to idle and keeps the partial results", () => {
+    const running = reduce(
+      initialState,
+      { type: "start" },
+      message({
+        type: "partial",
+        runId: 1,
+        rngId: "mulberry32",
+        phase: "main",
+        points: [
+          { n: 1, heads: 1 },
+          { n: 10, heads: 6 },
+        ],
+      }),
+    );
+    // Cancel does not start a new run: it answers the run already in flight.
+    const cancelled = reduce(
+      running,
+      message({
+        type: "error",
+        runId: 1,
+        message: "Run cancelled.",
+        cancelled: true,
+      }),
+    );
+
+    expect(cancelled.status).toBe("idle");
+    expect(cancelled.progressLabel).toBe("Cancelled");
+    // Cancelling is not a failure: nothing is shown as an error, and the
+    // checkpoint stream that was already delivered stays on the charts.
+    expect(cancelled.error).toBeNull();
+    expect(cancelled.partialPoints.mulberry32).toHaveLength(2);
+  });
+
   test("reset clears results but keeps the configuration", () => {
     const configured = reduce(
       initialState,
