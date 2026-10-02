@@ -1,9 +1,10 @@
 import { createRng } from "../lib/rng";
 import type { RngId } from "../lib/rng/types";
-import { chiSquareSurvival, zScore } from "../lib/stats";
+import { chiSquareSurvival, chiSquareUniform, zScore } from "../lib/stats";
 import type {
   AlgorithmResult,
   Checkpoint,
+  DieSummary,
   MainThreadMessage,
   ResultMessage,
   RunSeries,
@@ -308,6 +309,93 @@ async function runTrials(
   };
 }
 
+function nextDie(rng: { nextBit(): 0 | 1 }): number {
+  let value = 6;
+  while (value >= 6) {
+    value = (rng.nextBit() << 2) | (rng.nextBit() << 1) | rng.nextBit();
+  }
+  return value + 1;
+}
+
+async function runDieExperiment(
+  rng: { nextBit(): 0 | 1; id: RngId },
+  request: SimulationRequest,
+  callbacks: MainCallbacks,
+): Promise<{ points: Checkpoint[]; summary: DieSummary }> {
+  const started = performance.now();
+  const counts = new Int32Array(6);
+  const points: Checkpoint[] = [];
+  let checkpointIndex = 0;
+  let nextCheckpoint = request.checkpoints[0] ?? request.iterations;
+  let lastStep = 0;
+  let emissions = 0;
+
+  const emit = (done: number, force: boolean): void => {
+    const step = Math.floor((done * PROGRESS_STEPS) / request.iterations);
+    if (!force && step <= lastStep) return;
+    lastStep = step;
+    emissions += 1;
+    callbacks.onProgress(done);
+    if (emissions % PARTIAL_EVERY === 0 || force) callbacks.onPartial(points);
+  };
+
+  for (let i = 1; i <= request.iterations; i += 1) {
+    const face = nextDie(rng) - 1;
+    counts[face] = (counts[face] ?? 0) + 1;
+    if (i === nextCheckpoint) {
+      points.push({ n: i, heads: counts[0] ?? 0 });
+      checkpointIndex += 1;
+      nextCheckpoint =
+        request.checkpoints[checkpointIndex] ?? request.iterations + 1;
+    }
+    if (i % CHECK_EVERY === 0) {
+      assertLive(request.runId);
+      emit(i, false);
+      await yieldToEventLoop();
+    }
+  }
+  emit(request.iterations, true);
+  const values = [...counts];
+  return {
+    points,
+    summary: {
+      counts: values,
+      total: request.iterations,
+      chiSquare: chiSquareUniform(values),
+      runtimeMs: performance.now() - started,
+    },
+  };
+}
+
+async function runDieTrials(
+  createTrial: (seed: number) => { nextBit(): 0 | 1 },
+  request: SimulationRequest,
+  onProgress: (done: number) => void,
+): Promise<number[][]> {
+  const results: number[][] = [];
+  const progressEvery = Math.max(
+    1,
+    Math.floor(request.trials / PROGRESS_STEPS),
+  );
+  for (let trial = 0; trial < request.trials; trial += 1) {
+    assertLive(request.runId);
+    const rng = createTrial(request.seed + trial * 0x9e37_79b9);
+    const counts = new Array<number>(6).fill(0);
+    for (let i = 0; i < request.iterations; i += 1) {
+      const face = nextDie(rng) - 1;
+      counts[face] = (counts[face] ?? 0) + 1;
+      if (i % CHECK_EVERY === 0) {
+        assertLive(request.runId);
+        await yieldToEventLoop();
+      }
+    }
+    results.push(counts);
+    if ((trial + 1) % progressEvery === 0 || trial === request.trials - 1)
+      onProgress(trial + 1);
+  }
+  return results;
+}
+
 async function executeRun(request: SimulationRequest): Promise<void> {
   const startedAll = performance.now();
   const algorithms = request.rngIds;
@@ -317,6 +405,83 @@ async function executeRun(request: SimulationRequest): Promise<void> {
   for (const rngId of algorithms) {
     const base = phasesDone / totalPhases;
     const width = 1 / totalPhases;
+
+    if (request.mode === "die") {
+      const die = await runDieExperiment(
+        createRng(rngId, request.seed, "high"),
+        request,
+        {
+          onProgress: (done) =>
+            post({
+              type: "progress",
+              runId: request.runId,
+              fraction: base + (width * done) / request.iterations,
+              algorithm: rngId,
+              phase: "main",
+            }),
+          onPartial: (points) =>
+            post({
+              type: "partial",
+              runId: request.runId,
+              rngId,
+              phase: "main",
+              points,
+            }),
+        },
+      );
+      const trialCounts = await runDieTrials(
+        (trialSeed) => createRng(rngId, trialSeed, "high"),
+        request,
+        (done) =>
+          post({
+            type: "progress",
+            runId: request.runId,
+            fraction: base + width + (width * done) / request.trials,
+            algorithm: rngId,
+            phase: "trials",
+            trialsDone: done,
+          }),
+      );
+      const combinedCounts = trialCounts.reduce(
+        (sum, counts) =>
+          sum.map((value, index) => value + (counts[index] ?? 0)),
+        new Array<number>(6).fill(0),
+      );
+      const result: AlgorithmResult = {
+        mode: "die",
+        series: {
+          rngId,
+          points: die.points,
+          totalHeads: die.summary.counts[0] ?? 0,
+          decileHeads: [],
+          chiSquare: die.summary.chiSquare,
+          runtimeMs: die.summary.runtimeMs,
+          longestRun: 0,
+          maxAbsZ: 0,
+        },
+        histogram: {
+          rngId,
+          edges: [],
+          counts: [],
+          trials: request.trials,
+          mean: 0,
+          stdDev: 0,
+          runtimeMs: 0,
+        },
+        z: 0,
+        proportion: (die.summary.counts[0] ?? 0) / request.iterations,
+        chiSquare: die.summary.chiSquare,
+        die: {
+          ...die.summary,
+          counts: combinedCounts,
+          total: request.iterations * request.trials,
+          chiSquare: chiSquareUniform(combinedCounts),
+        },
+      };
+      post({ type: "result", runId: request.runId, result });
+      phasesDone += 2;
+      continue;
+    }
 
     const series = await runMainExperiment(
       createRng(rngId, request.seed, request.bitOrder),
@@ -361,6 +526,7 @@ async function executeRun(request: SimulationRequest): Promise<void> {
     );
 
     const result: AlgorithmResult = {
+      mode: "coin",
       series,
       histogram,
       z: zScore(series.totalHeads, request.iterations),

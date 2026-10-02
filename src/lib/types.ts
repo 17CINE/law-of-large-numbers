@@ -1,6 +1,8 @@
 import type { BitOrder, RngId } from "./rng/types";
 import type { ChiSquareResult } from "./stats";
 
+export type SimulationMode = "coin" | "die";
+
 /** One recorded sample: the running tally at a checkpoint value of n. */
 export interface Checkpoint {
   /** Number of flips performed so far. */
@@ -43,11 +45,20 @@ export interface TrialHistogram {
 }
 
 export interface AlgorithmResult {
+  mode: SimulationMode;
   series: RunSeries;
   histogram: TrialHistogram;
   z: number;
   proportion: number;
   chiSquare: ChiSquareResult;
+  die?: DieSummary;
+}
+
+export interface DieSummary {
+  counts: number[];
+  total: number;
+  chiSquare: ChiSquareResult;
+  runtimeMs: number;
 }
 
 export interface SimulationRequest {
@@ -60,6 +71,7 @@ export interface SimulationRequest {
   trials: number;
   bitOrder: BitOrder;
   checkpoints: number[];
+  mode: SimulationMode;
 }
 
 export interface SimulationCancel {

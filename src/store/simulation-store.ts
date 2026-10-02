@@ -7,7 +7,12 @@ import {
 } from "@/lib/checkpoints";
 import { getDescriptor, RNG_DESCRIPTORS } from "@/lib/rng";
 import type { BitOrder, RngId } from "@/lib/rng/types";
-import type { AlgorithmResult, Checkpoint, WorkerMessage } from "@/lib/types";
+import type {
+  AlgorithmResult,
+  Checkpoint,
+  SimulationMode,
+  WorkerMessage,
+} from "@/lib/types";
 
 /**
  * The single source of truth for the app: one `useReducer`.
@@ -21,6 +26,7 @@ export type RunStatus = "idle" | "running" | "done" | "error";
 
 export interface SimulationState {
   // ---- configuration ----
+  mode: SimulationMode;
   selectedRngIds: RngId[];
   /** Validated iteration count. */
   iterations: number;
@@ -52,6 +58,7 @@ export interface SimulationState {
 export const DEFAULT_SEED = 0x5eed_1234;
 
 export const initialState: SimulationState = {
+  mode: "coin",
   selectedRngIds: ["math-random", "mulberry32", "randu"],
   iterations: 100_000,
   iterationsText: "100000",
@@ -73,6 +80,7 @@ export const initialState: SimulationState = {
 };
 
 export type SimulationAction =
+  | { type: "setMode"; mode: SimulationMode }
   | { type: "toggleRng"; id: RngId }
   | { type: "setRngSelection"; ids: RngId[] }
   | { type: "setIterationsPreset"; value: number }
@@ -99,6 +107,18 @@ export function simulationReducer(
   action: SimulationAction,
 ): SimulationState {
   switch (action.type) {
+    case "setMode":
+      return {
+        ...state,
+        mode: action.mode,
+        results: {},
+        partialPoints: {},
+        status: "idle",
+        progress: 0,
+        progressLabel: "Idle",
+        error: null,
+      };
+
     case "toggleRng": {
       const selected = state.selectedRngIds.includes(action.id)
         ? state.selectedRngIds.filter((id) => id !== action.id)
@@ -252,6 +272,7 @@ export function simulationReducer(
         trialsText: state.trialsText,
         trialsError: null,
         bitOrder: state.bitOrder,
+        mode: state.mode,
         focusRngId: state.focusRngId,
       };
 

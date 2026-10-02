@@ -5,6 +5,7 @@ import { useMemo, useReducer, useState } from "react";
 import { ControlPanel } from "@/components/ControlPanel";
 import { ConvergenceChart } from "@/components/ConvergenceChart";
 import { DeviationChart } from "@/components/DeviationChart";
+import { DieChart } from "@/components/DieChart";
 import { DistributionChart } from "@/components/DistributionChart";
 import { StatsTable } from "@/components/StatsTable";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -74,6 +75,8 @@ export default function Page() {
   const controlPanel = (
     <ControlPanel
       theme={theme}
+      mode={state.mode}
+      onMode={(mode) => dispatch({ type: "setMode", mode })}
       selectedRngIds={state.selectedRngIds}
       onToggleRng={(id) => dispatch({ type: "toggleRng", id })}
       onSelectAll={() =>
@@ -154,7 +157,9 @@ export default function Page() {
         <main className="flex min-w-0 flex-col gap-5">
           <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[var(--color-line)] bg-[var(--color-panel)] px-4 py-3">
             <span className="text-sm font-medium text-[var(--color-muted)]">
-              Distribution chart shows:
+              {state.mode === "coin"
+                ? "Distribution chart shows:"
+                : "Bars show results for:"}
             </span>
             {state.selectedRngIds.length === 0 ? (
               <span className="text-sm text-[var(--color-muted)]">
@@ -182,38 +187,47 @@ export default function Page() {
             )}
           </div>
 
-          <ConvergenceChart
-            theme={theme}
-            series={completedSeries}
-            partialSeries={state.partialPoints}
-            iterations={state.iterations}
-            maxAbsDeviation={maxAbsDeviation}
-          />
-
-          <DeviationChart
-            theme={theme}
-            series={completedSeries}
-            iterations={state.iterations}
-          />
-
-          <DistributionChart
-            theme={theme}
-            rngId={state.focusRngId}
-            histogram={state.results[state.focusRngId]?.histogram}
-            iterations={state.iterations}
-            trialsRequested={state.trials}
-            trialsRun={trialsForRun(state).trials}
-          />
-
-          <StatsTable
-            theme={theme}
-            results={state.results}
-            partialResults={pendingIds}
-            ids={state.selectedRngIds}
-            focusRngId={state.focusRngId}
-            onFocusRng={(id) => dispatch({ type: "setFocusRng", id })}
-            iterations={state.iterations}
-          />
+          {state.mode === "coin" ? (
+            <>
+              <ConvergenceChart
+                theme={theme}
+                series={completedSeries}
+                partialSeries={state.partialPoints}
+                iterations={state.iterations}
+                maxAbsDeviation={maxAbsDeviation}
+              />
+              <DeviationChart
+                theme={theme}
+                series={completedSeries}
+                iterations={state.iterations}
+              />
+              <DistributionChart
+                theme={theme}
+                rngId={state.focusRngId}
+                histogram={state.results[state.focusRngId]?.histogram}
+                iterations={state.iterations}
+                trialsRequested={state.trials}
+                trialsRun={trialsForRun(state).trials}
+              />
+              <StatsTable
+                theme={theme}
+                results={state.results}
+                partialResults={pendingIds}
+                ids={state.selectedRngIds}
+                focusRngId={state.focusRngId}
+                onFocusRng={(id) => dispatch({ type: "setFocusRng", id })}
+                iterations={state.iterations}
+              />
+            </>
+          ) : (
+            <DieChart
+              theme={theme}
+              rngId={state.focusRngId}
+              summary={state.results[state.focusRngId]?.die}
+              iterations={state.iterations}
+              trials={trialsForRun(state).trials}
+            />
+          )}
         </main>
       </div>
     </div>

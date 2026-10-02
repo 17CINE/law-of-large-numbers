@@ -204,6 +204,28 @@ export function chiSquareGoodnessOfFit(
   };
 }
 
+/** Goodness-of-fit for a categorical distribution with equal expected counts. */
+export function chiSquareUniform(observed: readonly number[]): ChiSquareResult {
+  const total = observed.reduce((sum, value) => sum + value, 0);
+  if (total === 0 || observed.length < 2) {
+    return {
+      statistic: 0,
+      degreesOfFreedom: Math.max(0, observed.length - 1),
+      pValue: 1,
+    };
+  }
+  const expected = total / observed.length;
+  const statistic = observed.reduce(
+    (sum, value) => sum + (value - expected) ** 2 / expected,
+    0,
+  );
+  return {
+    statistic,
+    degreesOfFreedom: observed.length - 1,
+    pValue: chiSquareSurvival(statistic, observed.length - 1),
+  };
+}
+
 /**
  * The classic "is this coin fair?" test: a 2×2 heads/tails contingency table
  * with one fitted constraint, so df = 1. Equivalent to z² for a fair coin.

@@ -76,6 +76,7 @@ export function useSimulationWorker(
       trials,
       bitOrder: state.bitOrder,
       checkpoints: checkpointsForRun(state),
+      mode: state.mode,
     });
   }, [dispatch, send, state]);
 

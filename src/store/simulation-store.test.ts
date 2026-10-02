@@ -28,6 +28,7 @@ const message = (msg: WorkerMessage): SimulationAction => ({
 /** A finished result with only the fields the reducer reads. */
 function fakeResult(rngId: RngId): AlgorithmResult {
   return {
+    mode: "coin",
     series: {
       rngId,
       points: [
