@@ -19,9 +19,14 @@ function readInitialTheme(): Theme {
  * system unless the user has explicitly chosen a theme.
  */
 export function useTheme(): { theme: Theme; toggle: () => void } {
-  const [theme, setTheme] = useState<Theme>(readInitialTheme);
+  // Always start from a fixed default so server and client render the same
+  // markup; the real theme (set by the bootstrap script on <html>) is synced
+  // in the effect below, after hydration.
+  const [theme, setTheme] = useState<Theme>("light");
 
   useEffect(() => {
+    setTheme(readInitialTheme());
+
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const onChange = (event: MediaQueryListEvent) => {
       if (localStorage.getItem(STORAGE_KEY) === null) {

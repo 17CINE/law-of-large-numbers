@@ -15,7 +15,7 @@ import { ChartFrame, ChipToggle } from "@/components/ChartFrame";
 import { CHART_THEME, colorFor, type Theme } from "@/components/charts/palette";
 import { logTicks } from "@/lib/downsample";
 import { formatFlips } from "@/lib/format";
-import { getDescriptor } from "@/lib/rng";
+import { getDescriptor, isRngId } from "@/lib/rng";
 import type { RngId } from "@/lib/rng/types";
 import type { Checkpoint } from "@/lib/types";
 
@@ -204,12 +204,15 @@ export function DeviationChart({
               fontSize: 12,
               color: chrome.text,
             }}
-            formatter={(value, name) => [
-              typeof value === "number"
-                ? `${value.toFixed(1)} flips`
-                : String(value),
-              getDescriptor(name as RngId).shortName,
-            ]}
+            formatter={(value, name) => {
+              const label = String(name);
+              return [
+                typeof value === "number"
+                  ? `${value.toFixed(1)} flips`
+                  : String(value),
+                isRngId(label) ? getDescriptor(label).shortName : label,
+              ];
+            }}
             labelFormatter={(label) => `${formatFlips(Number(label))} flips`}
           />
           {showExpected ? (

@@ -147,7 +147,7 @@ export default function Page() {
             from `lg` up. `lg:block` deliberately outranks the `hidden`. */}
         <aside
           id="control-panel"
-          className={`rounded-xl border border-[var(--color-line)] bg-[var(--color-panel)] p-4 lg:sticky lg:top-6 lg:block lg:h-fit lg:p-5 ${
+          className={`rounded-xl border border-[var(--color-line)] bg-[var(--color-panel)] p-4 lg:sticky lg:top-6 lg:block lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto lg:p-5 ${
             drawerOpen ? "" : "hidden"
           }`}
         >
